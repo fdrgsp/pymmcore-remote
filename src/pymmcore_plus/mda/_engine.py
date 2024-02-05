@@ -70,7 +70,7 @@ class MDAEngine(PMDAEngine):
         set to `True` to improve performance.
     """
 
-    def __init__(self, mmc: CMMCorePlus, use_hardware_sequencing: bool = False) -> None:
+    def __init__(self, mmc: CMMCorePlus, use_hardware_sequencing: bool = True) -> None:
         self._mmc = mmc
         self.use_hardware_sequencing = use_hardware_sequencing
 
