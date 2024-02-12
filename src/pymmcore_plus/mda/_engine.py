@@ -168,8 +168,11 @@ class MDAEngine(PMDAEngine):
                 return ()
 
             try:
+                enable_af = self._mmc.isContinuousFocusLocked()
                 # execute hardware autofocus
                 new_correction = self._execute_autofocus(action)
+                if enable_af:
+                    self._mmc.enableContinuousFocus(True)
             except RuntimeError as e:
                 logger.warning("Hardware autofocus failed. %s", e)
             else:
