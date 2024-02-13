@@ -74,6 +74,8 @@ class MDAEngine(PMDAEngine):
         self._mmc = mmc
         self.use_hardware_sequencing = use_hardware_sequencing
 
+        self._af_locked: bool = False
+
         # used for one_shot autofocus to store the z correction for each position index.
         # map of {position_index: z_correction}
         self._z_correction: dict[int | None, float] = {}
@@ -94,6 +96,8 @@ class MDAEngine(PMDAEngine):
         """Setup the hardware for the entire sequence."""
         # clear z_correction for new sequence
         self._z_correction.clear()
+
+        self._af_locked = self._mmc.isContinuousFocusLocked()
 
         if not self._mmc:  # pragma: no cover
             from pymmcore_plus.core import CMMCorePlus
@@ -168,11 +172,9 @@ class MDAEngine(PMDAEngine):
                 return ()
 
             try:
-                enable_af = self._mmc.isContinuousFocusLocked()
                 # execute hardware autofocus
                 new_correction = self._execute_autofocus(action)
-                if enable_af:
-                    self._mmc.enableContinuousFocus(True)
+                self._mmc.enableContinuousFocus(self._af_locked)
             except RuntimeError as e:
                 logger.warning("Hardware autofocus failed. %s", e)
             else:
