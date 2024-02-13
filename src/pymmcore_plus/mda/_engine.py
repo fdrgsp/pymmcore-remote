@@ -76,8 +76,8 @@ class MDAEngine(PMDAEngine):
 
         # for sequeenced event. used to check if the hardware autofocus is engaged when
         # the sequence begins. if it is, we will re-engage after the autofocus action.
-        self._is_af_engaged: bool = False
-        self._re_engage: bool = False
+        self._was_af_engaged: bool = False
+        self._re_engage_af: bool = False
 
         # used for one_shot autofocus to store the z correction for each position index.
         # map of {position_index: z_correction}
@@ -106,7 +106,8 @@ class MDAEngine(PMDAEngine):
             self._mmc = CMMCorePlus.instance()
 
         # get if the autofocus is engaged at the start of the sequence
-        self._is_af_engaged = self._mmc.isContinuousFocusLocked()
+        self._was_af_engaged = self._mmc.isContinuousFocusLocked()
+        self._re_engage_af = False
 
         if px_size := self._mmc.getPixelSizeUm():
             self._update_grid_fov_sizes(px_size, sequence)
@@ -178,10 +179,10 @@ class MDAEngine(PMDAEngine):
             try:
                 # execute hardware autofocus
                 new_correction = self._execute_autofocus(action)
-                self._re_engage = True
+                self._re_engage_af = True
             except RuntimeError as e:
                 logger.warning("Hardware autofocus failed. %s", e)
-                self._re_engage = False
+                self._re_engage_af = False
             else:
                 # store correction for this position index
                 p_idx = event.index.get("p", None)
@@ -189,6 +190,10 @@ class MDAEngine(PMDAEngine):
                     p_idx, 0.0
                 )
             return ()
+        
+        # if the autofocus was engaged at the start of the sequence and af did not fail, re-engage it
+        if self._was_af_engaged and self._re_engage_af:
+            self._mmc.enableContinuousFocus(True)
 
         if isinstance(event, SequencedEvent):
             yield from self.exec_sequenced_event(event)
@@ -406,9 +411,6 @@ class MDAEngine(PMDAEngine):
         `exec_event`, which *is* part of the protocol), but it is made public
         in case a user wants to subclass this engine and override this method.
         """
-        # if the autofocus was engaged at the start of the seqience, re-engage it
-        if self._re_engage:
-            self._mmc.enableContinuousFocus(self._is_af_engaged)
 
         # TODO: add support for multiple camera devices
         n_events = len(event.events)
