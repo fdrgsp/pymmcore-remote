@@ -74,6 +74,8 @@ class MDAEngine(PMDAEngine):
         self._mmc = mmc
         self.use_hardware_sequencing = use_hardware_sequencing
 
+        # used to check if the hardware autofocus is engaged and locked when the
+        # sequence begins. If it is, we will re-engage after the autofocus action.
         self._af_locked: bool = False
 
         # used for one_shot autofocus to store the z correction for each position index.
