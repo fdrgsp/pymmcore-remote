@@ -174,7 +174,6 @@ class MDAEngine(PMDAEngine):
             try:
                 # execute hardware autofocus
                 new_correction = self._execute_autofocus(action)
-                self._mmc.enableContinuousFocus(self._af_locked)
             except RuntimeError as e:
                 logger.warning("Hardware autofocus failed. %s", e)
             else:
@@ -475,6 +474,7 @@ class MDAEngine(PMDAEngine):
         @retry(exceptions=RuntimeError, tries=action.max_retries, logger=logger.warning)
         def _perform_full_focus(previous_z: float) -> float:
             self._mmc.fullFocus()
+            self._mmc.enableContinuousFocus(self._af_locked)
             self._mmc.waitForSystem()
             return self._mmc.getZPosition() - previous_z
 
