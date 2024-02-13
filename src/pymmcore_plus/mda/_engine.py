@@ -477,11 +477,21 @@ class MDAEngine(PMDAEngine):
         def _perform_full_focus(previous_z: float) -> float:
             self._mmc.fullFocus()
             self._mmc.waitForSystem()
-            self._mmc.enableContinuousFocus(self._af_engaged)
-            self._mmc.waitForSystem()
+            self._re_engage()
             return self._mmc.getZPosition() - previous_z
 
         return _perform_full_focus(self._mmc.getZPosition())
+
+    def _re_engage(self) -> None:
+        """Re-engage autofocus after a fullFocus event.
+
+        Try 3 times to re-enable autofocus since one time may not be enough.
+        """
+        for _ in range(3):
+            self._mmc.enableContinuousFocus(True)
+            self._mmc.waitForSystem()
+            if self._mmc.isContinuousFocusLocked():
+                break
 
     def _set_event_position(self, event: MDAEvent) -> None:
         # skip if no XY stage device is found
