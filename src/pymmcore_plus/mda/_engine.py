@@ -97,12 +97,12 @@ class MDAEngine(PMDAEngine):
         # clear z_correction for new sequence
         self._z_correction.clear()
 
-        self._af_locked = self._mmc.isContinuousFocusLocked()
-
         if not self._mmc:  # pragma: no cover
             from pymmcore_plus.core import CMMCorePlus
 
             self._mmc = CMMCorePlus.instance()
+
+        self._af_locked = self._mmc.isContinuousFocusLocked()
 
         if px_size := self._mmc.getPixelSizeUm():
             self._update_grid_fov_sizes(px_size, sequence)
