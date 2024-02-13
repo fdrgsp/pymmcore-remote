@@ -74,8 +74,8 @@ class MDAEngine(PMDAEngine):
         self._mmc = mmc
         self.use_hardware_sequencing = use_hardware_sequencing
 
-        # used to check if the hardware autofocus is engaged and locked when the
-        # sequence begins. If it is, we will re-engage after the autofocus action.
+        # for sequeenced event. used to check if the hardware autofocus is engaged when
+        # the sequence begins. if it is, we will re-engage after the autofocus action.
         self._af_engaged: bool = False
 
         # used for one_shot autofocus to store the z correction for each position index.
@@ -104,6 +104,7 @@ class MDAEngine(PMDAEngine):
 
             self._mmc = CMMCorePlus.instance()
 
+        # get if the autofocus is engaged at the start of the sequence
         self._af_engaged = self._mmc.isContinuousFocusLocked()
 
         if px_size := self._mmc.getPixelSizeUm():
@@ -402,6 +403,9 @@ class MDAEngine(PMDAEngine):
         `exec_event`, which *is* part of the protocol), but it is made public
         in case a user wants to subclass this engine and override this method.
         """
+        # if the autofocus was engaged at the start of the seqience, re-engage it
+        self._mmc.enableContinuousFocus(self._af_engaged)
+
         # TODO: add support for multiple camera devices
         n_events = len(event.events)
 
@@ -477,21 +481,9 @@ class MDAEngine(PMDAEngine):
         def _perform_full_focus(previous_z: float) -> float:
             self._mmc.fullFocus()
             self._mmc.waitForSystem()
-            self._re_engage()
             return self._mmc.getZPosition() - previous_z
 
         return _perform_full_focus(self._mmc.getZPosition())
-
-    def _re_engage(self) -> None:
-        """Re-engage autofocus after a fullFocus event.
-
-        Try 3 times to re-enable autofocus since one time may not be enough.
-        """
-        for _ in range(3):
-            self._mmc.enableContinuousFocus(True)
-            self._mmc.waitForSystem()
-            if self._mmc.isContinuousFocusLocked():
-                break
 
     def _set_event_position(self, event: MDAEvent) -> None:
         # skip if no XY stage device is found
