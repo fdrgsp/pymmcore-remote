@@ -477,6 +477,12 @@ class MDAEngine(PMDAEngine):
         """Grab next image from the circular buffer and return it as an ImagePayload."""
         img, meta = self._mmc.popNextImageAndMD()
         tags = self.get_frame_metadata(meta)
+
+        # TEMPORARY SOLUTION
+        if self._mmc.mda._wait_until_event(event):  # noqa SLF001
+            self._mmc.mda.cancel()
+            self._mmc.stopSequenceAcquisition()
+
         return ImagePayload(img, event, tags)
 
     # ===================== EXTRA =====================
