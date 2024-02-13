@@ -50,6 +50,26 @@ if TYPE_CHECKING:
     )
 
 
+class AutofocusState(NamedTuple):
+    """Nametuple to store the state of the autofocus device.
+
+    Attributes
+    ----------
+    was_engaged : bool
+        Whether the autofocus device was engaged at the start of the sequence.
+    re_engage : bool
+        Whether the autofocus device should be re-engaged after the autofocus action.
+        This will be set to `True` or `False` after the autofocus action is executed.
+        If it fails, it will be set to `False`.
+    """
+
+    was_engaged: bool = False
+    re_engage: bool = False
+
+    def __bool__(self) -> bool:
+        return bool(self.was_engaged and self.re_engage)
+
+
 class MDAEngine(PMDAEngine):
     """The default MDAengine that ships with pymmcore-plus.
 
@@ -74,10 +94,9 @@ class MDAEngine(PMDAEngine):
         self._mmc = mmc
         self.use_hardware_sequencing = use_hardware_sequencing
 
-        # for sequeenced event. used to check if the hardware autofocus is engaged when
-        # the sequence begins. if it is, we will re-engage after the autofocus action.
-        self._was_af_engaged: bool = False
-        self._re_engage_af: bool = False
+        # used to check if the hardware autofocus is engaged when the sequence begins.
+        # if it is, we will re-engage it after the autofocus action (if successful).
+        self._af_state: AutofocusState = AutofocusState()
 
         # used for one_shot autofocus to store the z correction for each position index.
         # map of {position_index: z_correction}
@@ -106,8 +125,9 @@ class MDAEngine(PMDAEngine):
             self._mmc = CMMCorePlus.instance()
 
         # get if the autofocus is engaged at the start of the sequence
-        self._was_af_engaged = self._mmc.isContinuousFocusLocked()
-        self._re_engage_af = False
+        self._af_state = self._af_state._replace(
+            was_engaged=self._mmc.isContinuousFocusLocked()
+        )
 
         if px_size := self._mmc.getPixelSizeUm():
             self._update_grid_fov_sizes(px_size, sequence)
@@ -179,10 +199,10 @@ class MDAEngine(PMDAEngine):
             try:
                 # execute hardware autofocus
                 new_correction = self._execute_autofocus(action)
-                self._re_engage_af = True
+                self._af_state._replace(re_engage=True)
             except RuntimeError as e:
                 logger.warning("Hardware autofocus failed. %s", e)
-                self._re_engage_af = False
+                self._af_state._replace(re_engage=False)
             else:
                 # store correction for this position index
                 p_idx = event.index.get("p", None)
@@ -193,6 +213,12 @@ class MDAEngine(PMDAEngine):
         
         # if the autofocus was engaged at the start of the sequence and af did not fail, re-engage it
         if self._was_af_engaged and self._re_engage_af:
+            self._mmc.enableContinuousFocus(True)
+
+        # if the autofocus was engaged at the start of the sequence AND autofocus action
+        # did not fail, re-engage it. NOTE: we need to do that AFTER the runner calls
+        # `setup_event`, so we can't do it inside the exec_event autofocus action above.
+        if self._af_state:
             self._mmc.enableContinuousFocus(True)
 
         if isinstance(event, SequencedEvent):
@@ -411,7 +437,6 @@ class MDAEngine(PMDAEngine):
         `exec_event`, which *is* part of the protocol), but it is made public
         in case a user wants to subclass this engine and override this method.
         """
-
         # TODO: add support for multiple camera devices
         n_events = len(event.events)
 
@@ -457,6 +482,7 @@ class MDAEngine(PMDAEngine):
         img, meta = self._mmc.popNextImageAndMD()
         tags = self.get_frame_metadata(meta)
 
+        # TEMPORARY SOLUTION
         if self._mmc.mda._wait_until_event(event):  # noqa SLF001
             self._mmc.mda.cancel()
             self._mmc.stopSequenceAcquisition()
