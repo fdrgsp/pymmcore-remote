@@ -210,10 +210,6 @@ class MDAEngine(PMDAEngine):
                     p_idx, 0.0
                 )
             return ()
-        
-        # if the autofocus was engaged at the start of the sequence and af did not fail, re-engage it
-        if self._was_af_engaged and self._re_engage_af:
-            self._mmc.enableContinuousFocus(True)
 
         # if the autofocus was engaged at the start of the sequence AND autofocus action
         # did not fail, re-engage it. NOTE: we need to do that AFTER the runner calls
