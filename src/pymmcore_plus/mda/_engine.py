@@ -96,7 +96,9 @@ class MDAEngine(PMDAEngine):
 
         # used to check if the hardware autofocus is engaged when the sequence begins.
         # if it is, we will re-engage it after the autofocus action (if successful).
-        self._af_state: AutofocusState = AutofocusState()
+        self._af_was_engaged: bool = False
+        # used to store the success of the last _execute_autofocus call
+        self._af_succeeded: bool = False
 
         # used for one_shot autofocus to store the z correction for each position index.
         # map of {position_index: z_correction}
@@ -125,9 +127,7 @@ class MDAEngine(PMDAEngine):
             self._mmc = CMMCorePlus.instance()
 
         # get if the autofocus is engaged at the start of the sequence
-        self._af_state = self._af_state._replace(
-            was_engaged=self._mmc.isContinuousFocusLocked()
-        )
+        self._af_was_engaged = self._mmc.isContinuousFocusLocked()
 
         if px_size := self._mmc.getPixelSizeUm():
             self._update_grid_fov_sizes(px_size, sequence)
@@ -199,10 +199,10 @@ class MDAEngine(PMDAEngine):
             try:
                 # execute hardware autofocus
                 new_correction = self._execute_autofocus(action)
-                self._af_state._replace(re_engage=True)
+                self._af_succeeded = True
             except RuntimeError as e:
                 logger.warning("Hardware autofocus failed. %s", e)
-                self._af_state._replace(re_engage=False)
+                self._af_succeeded = False
             else:
                 # store correction for this position index
                 p_idx = event.index.get("p", None)
@@ -214,7 +214,7 @@ class MDAEngine(PMDAEngine):
         # if the autofocus was engaged at the start of the sequence AND autofocus action
         # did not fail, re-engage it. NOTE: we need to do that AFTER the runner calls
         # `setup_event`, so we can't do it inside the exec_event autofocus action above.
-        if self._af_state:
+        if self._af_was_engaged and self._af_succeeded:
             self._mmc.enableContinuousFocus(True)
 
         if isinstance(event, SequencedEvent):
