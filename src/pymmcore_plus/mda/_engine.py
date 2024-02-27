@@ -458,6 +458,9 @@ class MDAEngine(PMDAEngine):
             else:
                 time.sleep(0.001)
 
+        # this is not emitted otherwise
+        self._mmc.events.sequenceAcquisitionStopped.emit(self._mmc.getCameraDevice())
+
         if self._mmc.isBufferOverflowed():  # pragma: no cover
             raise MemoryError("Buffer overflowed")
 
