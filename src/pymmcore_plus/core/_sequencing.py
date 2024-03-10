@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from itertools import product
-from typing import TYPE_CHECKING, Literal, Sequence, Tuple, overload
+from typing import TYPE_CHECKING, Literal, Sequence, Tuple, cast, overload
 
 from useq import AcquireImage, MDAEvent
 
@@ -225,6 +225,22 @@ def can_sequence_events(
 
     def _nope(reason: str) -> tuple[bool, str] | bool:
         return (False, reason) if return_reason else False
+
+    # stimulation event
+    assert e1.sequence and e2.sequence
+    e1_meta = cast(dict, e1.sequence.metadata.get("pymmcore_widgets", {}))
+    e2_meta = cast(dict, e2.sequence.metadata.get("pymmcore_widgets", {}))
+    # e.g. {"pymmcore_widgets": {"stimulation": {"frames": {0: 0.5, 10: 1}}}
+    if (
+        e1_meta.get("stimulation")
+        and e1.index.get("t") is not None
+        and e1.index["t"] in e1_meta["stimulation"].get("frames", {})
+    ) or (
+        e2_meta.get("stimulation")
+        and e2.index.get("t") is not None
+        and e2.index["t"] in e2_meta["stimulation"].get("frames", {})
+    ):
+        return _nope("Cannot sequence events with stimulation.")
 
     # Action
     if not isinstance(e1.action, (AcquireImage, type(None))) or not isinstance(
