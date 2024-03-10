@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from typing import TypedDict
 
     from numpy.typing import NDArray
+    from pyfirmata2 import Arduino
     from pyfirmata2.pyfirmata2 import Pin
 
     from pymmcore_plus.core import CMMCorePlus, Metadata
@@ -111,7 +112,8 @@ class MDAEngine(PMDAEngine):
         # Note: getAutoShutter() is True when no config is loaded at all
         self._autoshutter_was_set: bool = self._mmc.getAutoShutter()
 
-        self.arduino_led: Pin = None
+        self._arduino_board: Arduino | None = None
+        self._arduino_led: Pin | None = None
 
     @property
     def mmcore(self) -> CMMCorePlus:
@@ -142,12 +144,14 @@ class MDAEngine(PMDAEngine):
         meta = cast(dict, sequence.metadata.get("pymmcore_widgets", {}))
         # {"pymmcore_widgets":
         #   {"stimulation": {
-        #       "arduino_led: Pin()
-        #       "frames": {0: 0.5, 10: 1}
+        #       "arduino_board": Arduino(),
+        #       "arduino_led: Pin(),
+        #       ...
         #   }
         # }
         stim_meta = cast(dict, meta.get("stimulation", {}))
-        self.arduino_led = stim_meta.get("arduino_led", None)
+        self._arduino_board = stim_meta.get("arduino_board", None)
+        self._arduino_led = stim_meta.get("arduino_led", None)
         # _________________________________________________________________
 
         return self.get_summary_metadata()
@@ -229,29 +233,12 @@ class MDAEngine(PMDAEngine):
             return ()
 
         # execute stimulation if the event if it is in the sequence metadata
-        # metadata e.g
-        # {"pymmcore_widgets":
-        #   {"stimulation": {
-        #       "arduino_led: Pin()
-        #       "frames": {0: 0.5, 10: 1}
-        #   }
-        # }
-        if self.arduino_led is not None:
-            assert event.sequence is not None
-            meta = cast(dict, event.sequence.metadata.get("pymmcore_widgets", {}))
-            stim_meta = cast(dict, meta.get("stimulation", {}))
-            t_idx = event.index.get("t", None)
-            if event.index["t"] in stim_meta.get("frames", {}):
-                logger.info(
-                    f"***   Stimulation Event: {event.index}, "
-                    f"LED: {self.arduino_led}, "
-                    f"LED Power: {stim_meta['frames'][t_idx]}   ***"
-                )
-                led_power = stim_meta["frames"][t_idx]
-                self.arduino_led.write(led_power)
-                time.sleep(1)
-                self.arduino_led.write(0)
-                return ()
+        if (
+            self._arduino_led is not None
+            and self._arduino_board is not None
+            and self._exec_led_stimulation(event)
+        ):
+            return ()
 
         # if the autofocus was engaged at the start of the sequence AND autofocus action
         # did not fail, re-engage it. NOTE: we need to do that AFTER the runner calls
@@ -263,6 +250,50 @@ class MDAEngine(PMDAEngine):
             yield from self.exec_sequenced_event(event)
         else:
             yield from self.exec_single_event(event)
+
+    def _exec_led_stimulation(self, event: MDAEvent) -> bool:
+        """Execute LED stimulation if the event is in the sequence metadata.
+
+        metadata looks like this:
+
+        {"pymmcore_widgets":
+          {"stimulation": {
+              "led_pulse_duration": 0.1,
+              "pulse_on_frame": {0: 0.5, 10: 1}
+          }
+        }
+        """
+        assert self._arduino_led is not None
+        if event.sequence is None:
+            return False
+
+        meta = cast(dict, event.sequence.metadata.get("pymmcore_widgets", {}))
+        stim_meta = cast(dict, meta.get("stimulation", {}))
+        pulse_on_frame = stim_meta.get("pulse_on_frame", None)
+        led_pulse_duration = stim_meta.get("led_pulse_duration", None)
+        t_idx = event.index.get("t", None)
+
+        if (
+            led_pulse_duration is not None
+            and pulse_on_frame is not None
+            and t_idx is not None
+            and event.index["t"] in pulse_on_frame
+        ):
+            logger.info(
+                f"***Stimulation Event: {event.index}, "
+                f"LED: {self._arduino_led}, "
+                f"LED Pulse Duration: {stim_meta.get('led_pulse_duration')}, "
+                f"LED Power: {stim_meta['pulse_on_frame'][t_idx]}***"
+            )
+            led_power = stim_meta["pulse_on_frame"][t_idx]
+
+            # switch on the LED
+            self._arduino_led.write(led_power)
+            time.sleep(led_pulse_duration)
+            # switch off the LED
+            self._arduino_led.write(0)
+            return True
+        return False
 
     def event_iterator(self, events: Iterable[MDAEvent]) -> Iterator[MDAEvent]:
         """Event iterator that merges events for hardware sequencing if possible.
@@ -528,7 +559,7 @@ class MDAEngine(PMDAEngine):
             self._mmc.mda.cancel()
             self._mmc.stopSequenceAcquisition()
 
-        logger.info(f"***   Snap Event: {event.index}   ***")
+        logger.info(f"***Snap Event: {event.index}***")
 
         return ImagePayload(img, event, tags)
 
