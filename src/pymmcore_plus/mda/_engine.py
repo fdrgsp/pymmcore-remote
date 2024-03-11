@@ -12,6 +12,7 @@ from typing import (
     cast,
 )
 
+from pyfirmata2 import Arduino
 from pyfirmata2.pyfirmata2 import Pin
 from useq import HardwareAutofocus, MDAEvent, MDASequence
 
@@ -26,7 +27,6 @@ if TYPE_CHECKING:
     from typing import TypedDict
 
     from numpy.typing import NDArray
-    from pyfirmata2 import Arduino
 
     from pymmcore_plus.core import CMMCorePlus, Metadata
 
@@ -94,9 +94,21 @@ class MDAEngine(PMDAEngine):
         By default, this is `False`, in order to avoid unexpected behavior, particularly
         in testing and demo scenarios.  But in many "real world" scenarios, this can be
         set to `True` to improve performance.
+    arduino_board : Arduino | None
+        The Arduino board to use for LED stimulation. If `None`, no LED stimulation will
+        be performed.
+    arduino_led_pin : Pin | None
+        The pin on the Arduino board to use for LED stimulation. If `None`, no LED
+        stimulation will be performed.
     """
 
-    def __init__(self, mmc: CMMCorePlus, use_hardware_sequencing: bool = True) -> None:
+    def __init__(
+        self,
+        mmc: CMMCorePlus,
+        use_hardware_sequencing: bool = True,
+        arduino_board: Arduino | None = None,
+        arduino_led_pin: Pin | None = None,
+    ) -> None:
         self._mmc = mmc
         self.use_hardware_sequencing = use_hardware_sequencing
 
@@ -116,13 +128,22 @@ class MDAEngine(PMDAEngine):
         self._autoshutter_was_set: bool = self._mmc.getAutoShutter()
 
         # for LED stimulation
-        self._arduino_board: Arduino | None = None
-        self._arduino_led: Pin | None = None
+        self._arduino_board = arduino_board
+        self._arduino_led_pin = arduino_led_pin
 
     @property
     def mmcore(self) -> CMMCorePlus:
         """The `CMMCorePlus` instance to use for hardware control."""
         return self._mmc
+
+    # ===================== Arduino Properties =========================
+    def setArduinoBoard(self, arduino_board: Arduino | None) -> None:
+        """Set the Arduino board to use for LED stimulation."""
+        self._arduino_board = arduino_board
+
+    def setArduinoLedPin(self, arduino_led_pin: Pin | None) -> None:
+        """Set the pin on the Arduino board to use for LED stimulation."""
+        self._arduino_led_pin = arduino_led_pin
 
     # ===================== Protocol Implementation =====================
 
@@ -145,21 +166,10 @@ class MDAEngine(PMDAEngine):
         self._autoshutter_was_set = self._mmc.getAutoShutter()
 
         # Arduino LED Setup________________________________________________
-        meta = cast(dict, sequence.metadata.get(NMM_METADATA_KEY, {}))
-        # {"napari_micromanager":
-        #   {"stimulation": {
-        #       "arduino_board": Arduino(),
-        #       "arduino_led_pin: Pin(),
-        #       ...
-        #   }
-        # }
-        stim_meta = cast(dict, meta.get(STIMULATION, {}))
-        self._arduino_board = stim_meta.get("arduino_board", None)
-        self._arduino_led = stim_meta.get("arduino_led_pin", None)
         # switch off the LED if it was on
-        if self._arduino_led:
-            self._arduino_led = cast(Pin, self._arduino_led)
-            self._arduino_led.write(0.0)
+        if self._arduino_led_pin:
+            self._arduino_led_pin = cast(Pin, self._arduino_led_pin)
+            self._arduino_led_pin.write(0.0)
         # _________________________________________________________________
 
         return self.get_summary_metadata()
@@ -247,8 +257,8 @@ class MDAEngine(PMDAEngine):
             self._mmc.enableContinuousFocus(True)
 
         # execute stimulation if the event if it is in the sequence metadata
-        if self._exec_led_stimulation(event):
-            return ()
+        if self._arduino_board is not None and self._arduino_led_pin is not None:
+            self._exec_led_stimulation(event)
 
         if isinstance(event, SequencedEvent):
             yield from self.exec_sequenced_event(event)
@@ -267,12 +277,11 @@ class MDAEngine(PMDAEngine):
           }
         }
         """
-        if (
-            self._arduino_board is None
-            or self._arduino_led is None
-            or event.sequence is None
-        ):
+        if event.sequence is None:
             return False
+
+        self._arduino_board = cast(Arduino, self._arduino_board)
+        self._arduino_led_pin = cast(Pin, self._arduino_led_pin)
 
         meta = cast(dict, event.sequence.metadata.get(NMM_METADATA_KEY, {}))
         stim_meta = cast(dict, meta.get(STIMULATION, {}))
@@ -295,10 +304,12 @@ class MDAEngine(PMDAEngine):
             led_power = stim_meta["pulse_on_frame"][t_idx]
 
             # switch on the LED
-            self._arduino_led.write(led_power / 100)
+            self._arduino_led_pin.write(led_power / 100)
             time.sleep(led_pulse_duration / 1000)  # convert to seconds
             # switch off the LED
-            self._arduino_led.write(0)
+            self._arduino_led_pin.write(0)
+            # maybe I should add a delay here to ensure the LED is off before the next
+            # event starts
             return True
         return False
 
