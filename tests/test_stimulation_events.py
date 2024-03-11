@@ -25,7 +25,9 @@ def test_stimulation_events(core: CMMCorePlus, qtbot: QtBot):
         time_plan={"interval": 0, "loops": 8},
         axis_order="ptc",
         stage_positions=[(222, 1, 1), (111, 0, 0)],
-        metadata={"pymmcore_widgets": {"stimulation": {"frames": {2: 100, 5: 100}}}},
+        metadata={
+            "napari_micromanager": {"stimulation": {"pulse_on_frame": {2: 100, 5: 100}}}
+        },
     )
 
     EXPECTED_SEQUENCES = 10  # 0,1 - 2 - 3,4 - 5 - 6,7 (* 2 positions)

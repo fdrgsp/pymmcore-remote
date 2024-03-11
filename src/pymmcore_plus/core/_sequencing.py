@@ -228,17 +228,17 @@ def can_sequence_events(
 
     # stimulation event
     assert e1.sequence and e2.sequence
-    e1_meta = cast(dict, e1.sequence.metadata.get("pymmcore_widgets", {}))
-    e2_meta = cast(dict, e2.sequence.metadata.get("pymmcore_widgets", {}))
-    # e.g. {"pymmcore_widgets": {"stimulation": {"frames": {0: 0.5, 10: 1}}}
+    e1_meta = cast(dict, e1.sequence.metadata.get("napari_micromanager", {}))
+    e2_meta = cast(dict, e2.sequence.metadata.get("napari_micromanager", {}))
+    # e.g. {"napari_micromanager": {"stimulation": {"pulse_on_frame": {0: 0.5, 10: 1}}}
     if (
         e1_meta.get("stimulation")
         and e1.index.get("t") is not None
-        and e1.index["t"] in e1_meta["stimulation"].get("frames", {})
+        and e1.index["t"] in e1_meta["stimulation"].get("pulse_on_frame", {})
     ) or (
         e2_meta.get("stimulation")
         and e2.index.get("t") is not None
-        and e2.index["t"] in e2_meta["stimulation"].get("frames", {})
+        and e2.index["t"] in e2_meta["stimulation"].get("pulse_on_frame", {})
     ):
         return _nope("Cannot sequence events with stimulation.")
 
