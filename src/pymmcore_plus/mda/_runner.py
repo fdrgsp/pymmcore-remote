@@ -275,7 +275,7 @@ class MDARunner:
                 break
 
             self._signals.eventStarted.emit(event)
-            logger.info("%s", event)
+            # logger.info("%s", event)
             engine.setup_event(event)
 
             output = engine.exec_event(event) or ()  # in case output is None

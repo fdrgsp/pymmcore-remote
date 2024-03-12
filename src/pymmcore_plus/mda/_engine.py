@@ -14,6 +14,7 @@ from typing import (
 
 from pyfirmata2 import Arduino
 from pyfirmata2.pyfirmata2 import Pin
+from rich import print
 from useq import HardwareAutofocus, MDAEvent, MDASequence
 
 from pymmcore_plus._logger import logger
@@ -228,8 +229,11 @@ class MDAEngine(PMDAEngine):
 
     def exec_event(self, event: MDAEvent) -> Iterable[PImagePayload]:
         """Execute an individual event and return the image data."""
+        print()
+
         action = getattr(event, "action", None)
         if isinstance(action, HardwareAutofocus):
+            print(f"***Autofocus Event: {event.index}, action: {action}***")
             # skip if no autofocus device is found
             if not self._mmc.getAutoFocusDevice():
                 logger.warning("No autofocus device found. Cannot execute autofocus.")
@@ -265,7 +269,7 @@ class MDAEngine(PMDAEngine):
         else:
             yield from self.exec_single_event(event)
 
-    def _exec_led_stimulation(self, event: MDAEvent) -> bool:
+    def _exec_led_stimulation(self, event: MDAEvent) -> None:
         """Execute LED stimulation if the event is in the sequence metadata.
 
         metadata looks like this:
@@ -278,7 +282,7 @@ class MDAEngine(PMDAEngine):
         }
         """
         if event.sequence is None:
-            return False
+            return
 
         self._arduino_board = cast(Arduino, self._arduino_board)
         self._arduino_led_pin = cast(Pin, self._arduino_led_pin)
@@ -295,12 +299,12 @@ class MDAEngine(PMDAEngine):
             and t_idx is not None
             and event.index["t"] in pulse_on_frame
         ):
-            # logger.info(
-            #     f"\n***Stimulation Event: {event.index}, "
-            #     f"LED: {self._arduino_led}, "
-            #     f"LED Pulse Duration: {stim_meta.get('led_pulse_duration')}, "
-            #     f"LED Power: {stim_meta['pulse_on_frame'][t_idx]}***\n"
-            # )
+            print(
+                f"***Stimulation Event: {event.index}, "
+                f"LED: {self._arduino_led_pin}, "
+                f"LED Pulse Duration: {stim_meta.get('led_pulse_duration')}, "
+                f"LED Power: {stim_meta['pulse_on_frame'][t_idx]}***"
+            )
             led_power = stim_meta["pulse_on_frame"][t_idx]
 
             # switch on the LED
@@ -308,10 +312,6 @@ class MDAEngine(PMDAEngine):
             time.sleep(led_pulse_duration / 1000)  # convert to seconds
             # switch off the LED
             self._arduino_led_pin.write(0)
-            # maybe I should add a delay here to ensure the LED is off before the next
-            # event starts
-            return True
-        return False
 
     def event_iterator(self, events: Iterable[MDAEvent]) -> Iterator[MDAEvent]:
         """Event iterator that merges events for hardware sequencing if possible.
@@ -388,6 +388,8 @@ class MDAEngine(PMDAEngine):
         `exec_event`, which *is* part of the protocol), but it is made public
         in case a user wants to subclass this engine and override this method.
         """
+        print(f"***Snap Event: {event.index}***\n")
+
         try:
             self._mmc.snapImage()
         except Exception as e:
@@ -434,7 +436,8 @@ class MDAEngine(PMDAEngine):
 
     def teardown_sequence(self, sequence: MDASequence) -> None:
         """Perform any teardown required after the sequence has been executed."""
-        pass
+        if self._mmc.getShutterDevice():
+            self._mmc.setShutterOpen(False)
 
     # ===================== Sequenced Events =====================
 
@@ -577,7 +580,7 @@ class MDAEngine(PMDAEngine):
             self._mmc.mda.cancel()
             self._mmc.stopSequenceAcquisition()
 
-        # logger.info(f"\n***Snap Event: {event.index}***\n")
+        print(f"***Snap Event: {event.index}***\n")
 
         return ImagePayload(img, event, tags)
 
