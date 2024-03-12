@@ -131,6 +131,7 @@ class MDAEngine(PMDAEngine):
         # for LED stimulation
         self._arduino_board = arduino_board
         self._arduino_led_pin = arduino_led_pin
+        self._exec_stimulation: dict[int, tuple[int, int]] = {}
 
     @property
     def mmcore(self) -> CMMCorePlus:
@@ -167,13 +168,34 @@ class MDAEngine(PMDAEngine):
         self._autoshutter_was_set = self._mmc.getAutoShutter()
 
         # Arduino LED Setup________________________________________________
-        # switch off the LED if it was on
-        if self._arduino_led_pin:
-            self._arduino_led_pin = cast(Pin, self._arduino_led_pin)
-            self._arduino_led_pin.write(0.0)
+        self._exec_stimulation.clear()
+        if self._arduino_board is not None and self._arduino_led_pin is not None:
+            self._setup_stimulation_events(sequence)
+
+        print()
+        print("_______________________")
+        print(self._exec_stimulation)
+        print("_______________________")
         # _________________________________________________________________
 
         return self.get_summary_metadata()
+
+    def _setup_stimulation_events(self, sequence: MDASequence) -> None:
+        # switch off the LED if it was on
+        self._arduino_led_pin = cast(Pin, self._arduino_led_pin)
+        self._arduino_led_pin.write(0.0)
+        # get metadata from the sequence and store it in the _exec_stimulation
+        meta = cast(dict, sequence.metadata.get(NMM_METADATA_KEY, {}))
+        stim_meta = cast(dict, meta.get(STIMULATION, {}))
+        pulse_on_frame = stim_meta.get("pulse_on_frame", None)
+        led_pulse_duration = stim_meta.get("led_pulse_duration", None)
+        if pulse_on_frame is not None and led_pulse_duration is not None:
+            # ctrate the _exec_stimulation dict with info about when to pulse the
+            # LED, for how long and with what power
+            # e.g. {frame: led_power, led_pulse_duration}
+            pulse_on_frame = cast(dict, pulse_on_frame)
+            for k, v in pulse_on_frame.items():
+                self._exec_stimulation[k] = (v, led_pulse_duration)
 
     def get_summary_metadata(self) -> SummaryMetadata:
         """Get the summary metadata for the sequence."""
@@ -264,57 +286,48 @@ class MDAEngine(PMDAEngine):
             self._mmc.enableContinuousFocus(True)
 
         # execute stimulation if the event if it is in the sequence metadata
-        if self._arduino_board is not None and self._arduino_led_pin is not None:
-            self._exec_led_stimulation(event)
+        # if self._arduino_board is not None and self._arduino_led_pin is not None:
+        if t_index := event.index.get("t", None):
+            if t_index in self._exec_stimulation:
+                yield from self._exec_led_stimulation(t_index, event)
 
-        if isinstance(event, SequencedEvent):
+        elif isinstance(event, SequencedEvent):
             yield from self.exec_sequenced_event(event)
         else:
             yield from self.exec_single_event(event)
 
-    def _exec_led_stimulation(self, event: MDAEvent) -> None:
-        """Execute LED stimulation if the event is in the sequence metadata.
-
-        metadata looks like this:
-
-        {"napari_micromanager":
-          {"stimulation": {
-              "led_pulse_duration": 0.1,
-              "pulse_on_frame": {0: 0.5, 10: 1}
-          }
-        }
-        """
-        if event.sequence is None:
-            return
-
+    def _exec_led_stimulation(
+        self, t_index: int, event: MDAEvent
+    ) -> Iterator[PImagePayload]:
+        """Execute LED stimulation."""
         self._arduino_board = cast(Arduino, self._arduino_board)
         self._arduino_led_pin = cast(Pin, self._arduino_led_pin)
+        led_power = self._exec_stimulation[t_index][0]
+        led_pulse_duration = self._exec_stimulation[t_index][1] / 1000  # convert to sec
 
-        meta = cast(dict, event.sequence.metadata.get(NMM_METADATA_KEY, {}))
-        stim_meta = cast(dict, meta.get(STIMULATION, {}))
-        pulse_on_frame = stim_meta.get("pulse_on_frame", None)
-        led_pulse_duration = stim_meta.get("led_pulse_duration", None)
-        t_idx = event.index.get("t", None)
+        print(
+            f"***Stimulation Event: {event.index}, "
+            f"LED: {self._arduino_led_pin}, "
+            f"LED Pulse Duration: {led_pulse_duration * 1000} ms, "
+            f"LED Power: {led_power} %***"
+        )
 
-        if (
-            led_pulse_duration is not None
-            and pulse_on_frame is not None
-            and t_idx is not None
-            and event.index["t"] in pulse_on_frame
-        ):
-            print(
-                f"***Stimulation Event: {event.index}, "
-                f"LED: {self._arduino_led_pin}, "
-                f"LED Pulse Duration: {stim_meta.get('led_pulse_duration')}, "
-                f"LED Power: {stim_meta['pulse_on_frame'][t_idx]}***"
-            )
-            led_power = stim_meta["pulse_on_frame"][t_idx]
+        # switch on the LED
+        self._arduino_led_pin.write(led_power / 100)
+        # wait for the duration of the pulse
+        time.sleep(led_pulse_duration)
+        # switch off the LED
+        self._arduino_led_pin.write(0)
 
-            # switch on the LED
-            self._arduino_led_pin.write(led_power / 100)
-            time.sleep(led_pulse_duration / 1000)  # convert to seconds
-            # switch off the LED
-            self._arduino_led_pin.write(0)
+        print(f"***Snap Event: {event.index}***\n")
+
+        try:
+            self._mmc.snapImage()
+        except Exception as e:
+            logger.warning("Failed to snap image. %s", e)
+            return ()
+        self._mmc.setShutterOpen(True)
+        yield ImagePayload(self._mmc.getImage(), event, self.get_frame_metadata())
 
     def event_iterator(self, events: Iterable[MDAEvent]) -> Iterator[MDAEvent]:
         """Event iterator that merges events for hardware sequencing if possible.
@@ -439,6 +452,7 @@ class MDAEngine(PMDAEngine):
 
     def teardown_sequence(self, sequence: MDASequence) -> None:
         """Perform any teardown required after the sequence has been executed."""
+        # close the current shutter at the end of the sequence
         if self._mmc.getShutterDevice():
             self._mmc.setShutterOpen(False)
 
