@@ -233,7 +233,10 @@ class MDAEngine(PMDAEngine):
 
         action = getattr(event, "action", None)
         if isinstance(action, HardwareAutofocus):
-            print(f"***Autofocus Event: {event.index}, action: {action}***")
+            print(
+                f"***Autofocus Event: {event.index}, action: {action}, "
+                f"{event.keep_shutter_open}***"
+            )
             # skip if no autofocus device is found
             if not self._mmc.getAutoFocusDevice():
                 logger.warning("No autofocus device found. Cannot execute autofocus.")
@@ -388,7 +391,7 @@ class MDAEngine(PMDAEngine):
         `exec_event`, which *is* part of the protocol), but it is made public
         in case a user wants to subclass this engine and override this method.
         """
-        print(f"***Snap Event: {event.index}***\n")
+        print(f"***Snap Event: {event.index}, {event.keep_shutter_open}***\n")
 
         try:
             self._mmc.snapImage()
@@ -580,7 +583,7 @@ class MDAEngine(PMDAEngine):
             self._mmc.mda.cancel()
             self._mmc.stopSequenceAcquisition()
 
-        print(f"***Snap Event: {event.index}***\n")
+        print(f"***Snap Event: {event.index}, {event.keep_shutter_open}***\n")
 
         return ImagePayload(img, event, tags)
 
