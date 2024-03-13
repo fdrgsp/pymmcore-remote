@@ -283,7 +283,7 @@ class MDAEngine(PMDAEngine):
         if self._af_was_engaged and self._af_succeeded:
             self._mmc.enableContinuousFocus(True)
 
-        elif isinstance(event, SequencedEvent):
+        if isinstance(event, SequencedEvent):
             yield from self.exec_sequenced_event(event)
         else:
             yield from self.exec_single_event(event)
