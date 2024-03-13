@@ -174,6 +174,7 @@ class MDAEngine(PMDAEngine):
 
         print()
         print("_______________________")
+        print("Arduino LED Setup")
         print(self._exec_stimulation)
         print("_______________________")
         # _________________________________________________________________
@@ -255,10 +256,7 @@ class MDAEngine(PMDAEngine):
 
         action = getattr(event, "action", None)
         if isinstance(action, HardwareAutofocus):
-            print(
-                f"***Autofocus Event: {event.index}, action: {action}, "
-                f"{event.keep_shutter_open}***"
-            )
+            print(f"***Autofocus Event: {event.index}, action: {action}***")
             # skip if no autofocus device is found
             if not self._mmc.getAutoFocusDevice():
                 logger.warning("No autofocus device found. Cannot execute autofocus.")
@@ -285,49 +283,10 @@ class MDAEngine(PMDAEngine):
         if self._af_was_engaged and self._af_succeeded:
             self._mmc.enableContinuousFocus(True)
 
-        # execute stimulation if the event if it is in the sequence metadata
-        # if self._arduino_board is not None and self._arduino_led_pin is not None:
-        if t_index := event.index.get("t", None):
-            if t_index in self._exec_stimulation:
-                yield from self._exec_led_stimulation(t_index, event)
-
         elif isinstance(event, SequencedEvent):
             yield from self.exec_sequenced_event(event)
         else:
             yield from self.exec_single_event(event)
-
-    def _exec_led_stimulation(
-        self, t_index: int, event: MDAEvent
-    ) -> Iterator[PImagePayload]:
-        """Execute LED stimulation."""
-        self._arduino_board = cast(Arduino, self._arduino_board)
-        self._arduino_led_pin = cast(Pin, self._arduino_led_pin)
-        led_power = self._exec_stimulation[t_index][0]
-        led_pulse_duration = self._exec_stimulation[t_index][1] / 1000  # convert to sec
-
-        print(
-            f"***Stimulation Event: {event.index}, "
-            f"LED: {self._arduino_led_pin}, "
-            f"LED Pulse Duration: {led_pulse_duration * 1000} ms, "
-            f"LED Power: {led_power} %***"
-        )
-
-        # switch on the LED
-        self._arduino_led_pin.write(led_power / 100)
-        # wait for the duration of the pulse
-        time.sleep(led_pulse_duration)
-        # switch off the LED
-        self._arduino_led_pin.write(0)
-
-        print(f"***Snap Event: {event.index}***\n")
-
-        try:
-            self._mmc.snapImage()
-        except Exception as e:
-            logger.warning("Failed to snap image. %s", e)
-            return ()
-        self._mmc.setShutterOpen(True)
-        yield ImagePayload(self._mmc.getImage(), event, self.get_frame_metadata())
 
     def event_iterator(self, events: Iterable[MDAEvent]) -> Iterator[MDAEvent]:
         """Event iterator that merges events for hardware sequencing if possible.
@@ -404,7 +363,13 @@ class MDAEngine(PMDAEngine):
         `exec_event`, which *is* part of the protocol), but it is made public
         in case a user wants to subclass this engine and override this method.
         """
-        print(f"***Snap Event: {event.index}, {event.keep_shutter_open}***\n")
+        # execute stimulation if the event if it is in the sequence metadata
+        # if self._arduino_board is not None and self._arduino_led_pin is not None:
+        if t_index := event.index.get("t", None):
+            if t_index in self._exec_stimulation:
+                self._exec_led_stimulation(t_index, event)
+
+        print(f"***Snap Event: {event.index}***\n")
 
         try:
             self._mmc.snapImage()
@@ -537,6 +502,27 @@ class MDAEngine(PMDAEngine):
         The default implementation does nothing.
         """
 
+    def _exec_led_stimulation(self, t_index: int, event: MDAEvent) -> None:
+        """Execute LED stimulation."""
+        self._arduino_board = cast(Arduino, self._arduino_board)
+        self._arduino_led_pin = cast(Pin, self._arduino_led_pin)
+        led_power = self._exec_stimulation[t_index][0]
+        led_pulse_duration = self._exec_stimulation[t_index][1] / 1000  # convert to sec
+
+        print(
+            f"***Stimulation Event: {event.index}, "
+            f"LED: {self._arduino_led_pin}, "
+            f"LED Pulse Duration: {led_pulse_duration * 1000} ms, "
+            f"LED Power: {led_power} %***"
+        )
+
+        # switch on the LED
+        self._arduino_led_pin.write(led_power / 100)
+        # wait for the duration of the pulse
+        time.sleep(led_pulse_duration)
+        # switch off the LED
+        self._arduino_led_pin.write(0)
+
     def exec_sequenced_event(self, event: SequencedEvent) -> Iterable[PImagePayload]:
         """Execute a sequenced (triggered) event and return the image data.
 
@@ -546,6 +532,12 @@ class MDAEngine(PMDAEngine):
         """
         # TODO: add support for multiple camera devices
         n_events = len(event.events)
+
+        # execute stimulation if the event if it is in the sequence metadata
+        # if self._arduino_board is not None and self._arduino_led_pin is not None:
+        if t_index := event.index.get("t", None):
+            if t_index in self._exec_stimulation:
+                self._exec_led_stimulation(t_index, event)
 
         # Start sequence
         # Note that the overload of startSequenceAcquisition that takes a camera
@@ -597,7 +589,7 @@ class MDAEngine(PMDAEngine):
             self._mmc.mda.cancel()
             self._mmc.stopSequenceAcquisition()
 
-        print(f"***Snap Event: {event.index}, {event.keep_shutter_open}***\n")
+        print(f"***Snap Event: {event.index}***\n")
 
         return ImagePayload(img, event, tags)
 

@@ -30,7 +30,7 @@ def test_stimulation_events(core: CMMCorePlus, qtbot: QtBot):
         },
     )
 
-    EXPECTED_SEQUENCES = 10  # 0,1 - 2 - 3,4 - 5 - 6,7 (* 2 positions)
+    EXPECTED_SEQUENCES = 6  # 0,1 - 2,3,4 - 5,6,7 (* 2 positions)
 
     core_mock = cast("CMMCorePlus", MagicMock(wraps=core))  # so we can spy on all_calls
     engine = MDAEngine(mmc=core_mock)
