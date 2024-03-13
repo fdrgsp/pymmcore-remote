@@ -191,7 +191,7 @@ class MDAEngine(PMDAEngine):
         pulse_on_frame = stim_meta.get("pulse_on_frame", None)
         led_pulse_duration = stim_meta.get("led_pulse_duration", None)
         if pulse_on_frame is not None and led_pulse_duration is not None:
-            # ctrate the _exec_stimulation dict with info about when to pulse the
+            # create the _exec_stimulation dict with info about when to pulse the
             # LED, for how long and with what power
             # e.g. {frame: led_power, led_pulse_duration}
             pulse_on_frame = cast(dict, pulse_on_frame)
