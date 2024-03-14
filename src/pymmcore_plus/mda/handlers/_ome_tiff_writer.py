@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     import useq
 
 IMAGEJ_AXIS_ORDER = "tzcyxs"
+NMM_METADATA_KEY = "napari_micromanager"
 
 
 class OMETiffWriter(_5DWriterBase[np.memmap]):
@@ -155,15 +156,16 @@ class OMETiffWriter(_5DWriterBase[np.memmap]):
                 metadata["PhysicalSizeZUnit"] = "µm"
             if seq.channels:
                 metadata["Channel"] = {"Name": [c.config for c in seq.channels]}
+            if px_meta := seq.metadata.get(NMM_METADATA_KEY):
+                if pix := px_meta.get("PixelSizeUm") is not None:
+                    metadata["PhysicalSizeX"] = pix
+                    metadata["PhysicalSizeY"] = pix
+                    metadata["PhysicalSizeXUnit"] = "µm"
+                    metadata["PhysicalSizeYUnit"] = "µm"
 
         # TODO
         # if acq_date := meta.get("Time"):
         #     metadata["AcquisitionDate"] = acq_date
-        # if pix := meta.get("PixelSizeUm"):
-        #     metadata["PhysicalSizeX"] = pix
-        #     metadata["PhysicalSizeY"] = pix
-        #     metadata["PhysicalSizeXUnit"] = "µm"
-        #     metadata["PhysicalSizeYUnit"] = "µm"
 
         # TODO:
         # there's a LOT we could still capture, but it comes off the microscope
