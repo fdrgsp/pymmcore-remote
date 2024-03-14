@@ -37,7 +37,7 @@ Non-OME (ImageJ) hyperstack axes MUST be in TZCYXS order
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -157,7 +157,9 @@ class OMETiffWriter(_5DWriterBase[np.memmap]):
             if seq.channels:
                 metadata["Channel"] = {"Name": [c.config for c in seq.channels]}
             if px_meta := seq.metadata.get(NMM_METADATA_KEY):
-                if pix := px_meta.get("PixelSizeUm") is not None:
+                pix = px_meta.get("PixelSizeUm")
+                if pix is not None:
+                    pix = cast(float, pix)
                     metadata["PhysicalSizeX"] = pix
                     metadata["PhysicalSizeY"] = pix
                     metadata["PhysicalSizeXUnit"] = "µm"
