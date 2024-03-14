@@ -195,8 +195,13 @@ class ImageSequenceWriter:
             # if we don't have a sequence, just use the counter
             filename = f"{self._prefix}_fr{frame_idx:05}.tif"
 
+        _dir = self._directory / f"p{event.index.get('p', 0)}"
+        if not _dir.exists():
+            _dir.mkdir(parents=True, exist_ok=True)
+
         # WRITE DATA TO DISK
-        self._imwrite(str(self._directory / filename), frame, **self._imwrite_kwargs)
+        # self._imwrite(str(self._directory / filename), frame, **self._imwrite_kwargs)
+        self._imwrite(str(_dir / filename), frame, **self._imwrite_kwargs)
 
         # store metadata
         meta["Event"] = json.loads(event.json(exclude={"sequence"}, exclude_unset=True))
