@@ -283,6 +283,12 @@ class MDAEngine(PMDAEngine):
         if self._af_was_engaged and self._af_succeeded:
             self._mmc.enableContinuousFocus(True)
 
+        # execute stimulation if the event if it is in the sequence metadata
+        # if self._arduino_board is not None and self._arduino_led_pin is not None:
+        if t_index := event.index.get("t", None):
+            if t_index in self._exec_stimulation:
+                self._exec_led_stimulation(t_index, event)
+
         if isinstance(event, SequencedEvent):
             yield from self.exec_sequenced_event(event)
         else:
@@ -363,12 +369,6 @@ class MDAEngine(PMDAEngine):
         `exec_event`, which *is* part of the protocol), but it is made public
         in case a user wants to subclass this engine and override this method.
         """
-        # execute stimulation if the event if it is in the sequence metadata
-        # if self._arduino_board is not None and self._arduino_led_pin is not None:
-        if t_index := event.index.get("t", None):
-            if t_index in self._exec_stimulation:
-                self._exec_led_stimulation(t_index, event)
-
         print(f"***Snap Event: {event.index}***\n")
 
         try:
@@ -532,12 +532,6 @@ class MDAEngine(PMDAEngine):
         """
         # TODO: add support for multiple camera devices
         n_events = len(event.events)
-
-        # execute stimulation if the event if it is in the sequence metadata
-        # if self._arduino_board is not None and self._arduino_led_pin is not None:
-        if t_index := event.index.get("t", None):
-            if t_index in self._exec_stimulation:
-                self._exec_led_stimulation(t_index, event)
 
         # Start sequence
         # Note that the overload of startSequenceAcquisition that takes a camera
