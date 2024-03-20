@@ -10,6 +10,9 @@ from pymmcore_plus.core._constants import DeviceType
 if TYPE_CHECKING:
     from pymmcore_plus import CMMCorePlus
 
+PYMMCW_METADATA_KEY = "pymmcore_widgets"
+STIMULATION = "stimulation"
+
 
 class SequencedEvent(MDAEvent):
     """Subclass of MDAEvent that represents a sequence of triggered events.
@@ -229,12 +232,12 @@ def can_sequence_events(
     # stimulation event. here we want to have the event with the stimulation at the
     # start of the sequenced event so we can run it before the sequence starts.
     assert e2.sequence
-    e2_meta = cast(dict, e2.sequence.metadata.get("napari_micromanager", {}))
-    # e.g. {"napari_micromanager": {"stimulation": {"pulse_on_frame": {0: 0.5, 10: 1}}}
+    e2_meta = cast(dict, e2.sequence.metadata.get(PYMMCW_METADATA_KEY, {}))
+    # e.g. {""pymmcore_widgets"": {"stimulation": {"pulse_on_frame": {0: 0.5, 10: 1}}}
     if (
-        e2_meta.get("stimulation")
+        e2_meta.get(STIMULATION)
         and e2.index.get("t") is not None
-        and e2.index["t"] in e2_meta["stimulation"].get("pulse_on_frame", {})
+        and e2.index["t"] in e2_meta[STIMULATION].get("pulse_on_frame", {})
     ):
         return _nope("Cannot sequence events before stimulation.")
 

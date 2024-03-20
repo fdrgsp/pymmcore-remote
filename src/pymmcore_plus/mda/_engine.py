@@ -53,7 +53,7 @@ if TYPE_CHECKING:
         },
     )
 
-NMM_METADATA_KEY = "napari_micromanager"
+PYMMCW_METADATA_KEY = "pymmcore_widgets"
 STIMULATION = "stimulation"
 
 
@@ -186,7 +186,7 @@ class MDAEngine(PMDAEngine):
         self._arduino_led_pin = cast(Pin, self._arduino_led_pin)
         self._arduino_led_pin.write(0.0)
         # get metadata from the sequence and store it in the _exec_stimulation
-        meta = cast(dict, sequence.metadata.get(NMM_METADATA_KEY, {}))
+        meta = cast(dict, sequence.metadata.get(PYMMCW_METADATA_KEY, {}))
         stim_meta = cast(dict, meta.get(STIMULATION, {}))
         pulse_on_frame = stim_meta.get("pulse_on_frame", None)
         led_pulse_duration = stim_meta.get("led_pulse_duration", None)
