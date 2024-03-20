@@ -26,7 +26,7 @@ def test_stimulation_events(core: CMMCorePlus, qtbot: QtBot):
         axis_order="ptc",
         stage_positions=[(222, 1, 1), (111, 0, 0)],
         metadata={
-            "napari_micromanager": {"stimulation": {"pulse_on_frame": {2: 100, 5: 100}}}
+            "pymmcore_widgets": {"stimulation": {"pulse_on_frame": {2: 100, 5: 100}}}
         },
     )
 
