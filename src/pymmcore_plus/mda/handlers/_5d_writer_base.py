@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from abc import abstractmethod
 from collections import defaultdict
-from typing import TYPE_CHECKING, Generic, Mapping, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Mapping, Protocol, TypeVar
 
 from ._util import position_sizes
 
@@ -66,7 +66,7 @@ class _5DWriterBase(Generic[T]):
 
         # storage of individual frame metadata
         # maps position key to list of frame metadata
-        self.frame_metadatas: defaultdict[str, list[dict]] = defaultdict(list)
+        self.frame_metadatas: defaultdict[str, Any] = defaultdict(list)
 
         # set during sequenceStarted and cleared during sequenceFinished
         self.current_sequence: useq.MDASequence | None = None
