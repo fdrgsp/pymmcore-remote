@@ -37,7 +37,7 @@ Non-OME (ImageJ) hyperstack axes MUST be in TZCYXS order
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 import ome_types.model as m
@@ -144,7 +144,7 @@ class OMETiffWriter(_5DWriterBase[np.memmap]):
             "file": fname,
             "sizes": sizes,
             "shape": shape,
-            "dtype": dtype,
+            "dtype": str(dtype),
         }
 
         return mmap  # type: ignore
@@ -163,13 +163,14 @@ class OMETiffWriter(_5DWriterBase[np.memmap]):
         """
         # get the OME channel and plane for the event
         channel = self._get_ome_channel(event)
-        plane = self._get_ome_plane(event, meta)
+        plane = self._get_ome_plane(event, meta.get("ElapsedTime-ms", 0.0))
         # self.frame_metadatas[key] is added in the 'new_array' method
         # if the 'pixels' key is not present, we need to add the pixel metadata
         if "pixels" not in self.frame_metadatas[key]:
-            self._get_ome_pixel(key, meta, channel, plane)
+            self._set_ome_pixel(key, meta, channel, plane)
         # otherwise, we only need to append the new channel and plane
         else:
+            self._update_ome_pixel(key, channel, plane)
             if channel not in self.frame_metadatas[key]["pixels"]["channels"]:
                 self.frame_metadatas[key]["pixels"]["channels"].append(channel)
             self.frame_metadatas[key]["pixels"]["planes"].append(plane)
@@ -178,13 +179,14 @@ class OMETiffWriter(_5DWriterBase[np.memmap]):
         """Return the OME channel from the event."""
         if event.channel is None:
             return m.Channel(id="Channel:0", name="Channel:0", samples_per_pixel=1)
+
         return m.Channel(
             id=f"Channel:{event.index.get('c', 0)}",
             name=f"{event.channel.group}:{event.channel.config}",
             samples_per_pixel=1,
         )
 
-    def _get_ome_plane(self, event: useq.MDAEvent, meta: dict) -> m.Plane:
+    def _get_ome_plane(self, event: useq.MDAEvent, elapsed_time_ms: float) -> m.Plane:
         """Return the OME plane from the event."""
         return m.Plane(
             the_c=event.index.get("c", 0),
@@ -198,28 +200,24 @@ class OMETiffWriter(_5DWriterBase[np.memmap]):
             position_y_unit="µm",
             position_z=event.z_pos,
             position_z_unit="µm",
-            delta_t=meta.get("ElapsedTime-ms", 0),
+            delta_t=elapsed_time_ms,
             delta_t_unit="ms",
         )
 
-    def _get_ome_pixel(
+    def _set_ome_pixel(
         self, key: str, meta: dict, channel: m.Channel, plane: m.Plane
     ) -> None:
-        dtype = str(self.frame_metadatas[key]["dtype"])
-        sizes = cast(dict, self.frame_metadatas[key]["sizes"])
-        shape = self.frame_metadatas[key]["shape"]
-
         # get z step size from the sequence if it is a relative z plan
         z_step = None
         if (
             self.current_sequence is not None
             and self.current_sequence.z_plan
-            and self.current_sequence.z_plan.is_relative
+            and hasattr(self.current_sequence.z_plan, "step")
         ):
-            # TODO: FIX ME!!!
-            z_step = self.current_sequence.z_plan.step  # type: ignore
+            z_step = self.current_sequence.z_plan.step
 
-        self.frame_metadatas[key]["pixels"] = {
+        frame_meta = self.frame_metadatas[key]
+        frame_meta["pixels"] = {
             "dimension_order": "XYCZT",  # TODO: should this be dynamic?
             "physical_size_x": meta.get("PixelSizeUm"),
             "physical_size_x_unit": "µm",
@@ -227,16 +225,21 @@ class OMETiffWriter(_5DWriterBase[np.memmap]):
             "physical_size_y_unit": "µm",
             "physical_size_z": z_step,
             "physical_size_z_unit": "µm",
-            "size_t": sizes.get("t", "1"),
-            "size_z": sizes.get("z", "1"),
-            "size_c": sizes.get("c", "1"),
-            "size_x": shape[-2],
-            "size_y": shape[-1],
-            "type": dtype,
+            "size_t": frame_meta["sizes"].get("t", "1"),
+            "size_z": frame_meta["sizes"].get("z", "1"),
+            "size_c": frame_meta["sizes"].get("c", "1"),
+            "size_x": frame_meta["shape"][-2],
+            "size_y": frame_meta["shape"][-1],
+            "type": frame_meta["dtype"],
             "channels": [channel],
             "planes": [plane],
             # "tiff_data_blocks" will be added in finalize_metadata
         }
+
+    def _update_ome_pixel(self, key: str, channel: m.Channel, plane: m.Plane) -> None:
+        if channel not in self.frame_metadatas[key]["pixels"]["channels"]:
+            self.frame_metadatas[key]["pixels"]["channels"].append(channel)
+        self.frame_metadatas[key]["pixels"]["planes"].append(plane)
 
     def finalize_metadata(self) -> None:
         """Called during sequenceFinished before clearing sequence metadata.
