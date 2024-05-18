@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 from ._util import position_sizes
 
 if TYPE_CHECKING:
-    from typing import Literal, Mapping, Self, Sequence, TypeAlias
+    from typing import Literal, Mapping, Sequence, TypeAlias
 
     import numpy as np
     import tensorstore as ts
@@ -116,7 +116,7 @@ class TensorStoreHandler:
         dir: str | PathLike[str] | None = None,
         cleanup_atexit: bool = True,
         **kwargs: Any,
-    ) -> Self:
+    ) -> TensorStoreHandler:
         """Create TensorStoreHandler that writes to a temporary directory.
 
         Parameters
@@ -270,11 +270,15 @@ class TensorStoreHandler:
             meta["Event"] = json.loads(js)
             data.append(meta)
 
-        metadata = {"frame_metadatas": data}
+        metadata = {
+            "useq_MDASequence": self.current_sequence.model_dump_json(
+                exclude_defaults=True
+            ),
+            "frame_metadatas": data,
+        }
         if not self._nd_storage:
             metadata["frame_indices"] = [
-                (tuple(dict(k).items()), v)  # type: ignore
-                for k, v in self._frame_indices.items()
+                (tuple(dict(k).items()), v) for k, v in self._frame_indices.items()
             ]
 
         if self.ts_driver.startswith("zarr"):
@@ -300,7 +304,8 @@ class TensorStoreHandler:
         The return value is safe to use as an index to self._store[...]
         """
         if self._nd_storage:
-            return self._ts.d[*index][*index.values()]
+            return self._ts.d[tuple(index.keys())][tuple(index.values())]
+            # return self._ts.d[*index][*index.values()]
 
         if any(isinstance(v, slice) for v in index.values()):
             idx: list | int | ts.DimExpression = self._get_frame_indices(index)
