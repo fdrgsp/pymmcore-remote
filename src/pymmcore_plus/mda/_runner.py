@@ -189,6 +189,7 @@ class MDARunner:
                 created automatically based on the extension of the path.
                 - `.zarr` files will be handled by `OMEZarrWriter`
                 - `.ome.tiff` files will be handled by `OMETiffWriter`
+                - `.zarr_tensorstore` files will be handled by `TensorStoreHandler`
                 - A directory with no extension will be handled by `ImageSequenceWriter`
             - A handler object that implements the `DataHandler` protocol, currently
                 meaning it has a `frameReady` method.  See `mda_listeners_connected`
@@ -243,6 +244,12 @@ class MDARunner:
         This method picks from the built-in handlers based on the extension of the path.
         """
         path = str(Path(path).expanduser().resolve())
+
+        if path.endswith(".zarr_tensorstore"):
+            from pymmcore_plus.mda.handlers import TensorStoreHandler
+
+            return TensorStoreHandler(path=path, delete_existing=True, driver="zarr")
+
         if path.endswith(".zarr"):
             from pymmcore_plus.mda.handlers import OMEZarrWriter
 
