@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from queue import Queue
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -170,3 +171,32 @@ def test_tensorstore_writer(
     x = writer.isel(t=0, c=0, x=slice(0, 100))
     assert isinstance(x, np.ndarray)
     assert x.shape[-1] == 100
+
+
+def test_tensorstore_writer_spec_override(tmp_path: Path) -> None:
+    writer = TensorStoreHandler(
+        path=tmp_path / "test.zarr",
+        spec={"context": {"cache_pool": {"total_bytes_limit": 10000000}}},
+    )
+
+    assert writer.get_spec()["context"]["cache_pool"]["total_bytes_limit"] == 10000000
+
+
+def test_tensorstore_writer_indeterminate(tmp_path: Path, core: CMMCorePlus) -> None:
+    # FIXME: this test is actually throwing difficult-to-debug exceptions
+    # when driver=='zarr'.  It happens when awaiting the result of self._store.resize()
+    # inside of sequenceFinished.
+    writer = TensorStoreHandler()
+
+    que = Queue()
+    thread = core.run_mda(iter(que.get, None), output=writer)
+    for t in range(2):
+        for z in range(2):
+            que.put(useq.MDAEvent(index={"t": t, "z": z, "c": 0}))
+    que.put(None)
+    thread.join()
+
+    assert writer.isel(t=1, z=1, c=0).shape == (512, 512)
+    assert writer.isel(t=1, z=slice(None), c=0).shape == (2, 512, 512)
+    with pytest.raises(KeyError):
+        writer.isel(t=2, z=2, c=0)

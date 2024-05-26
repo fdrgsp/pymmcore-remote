@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 from ._util import position_sizes
 
 if TYPE_CHECKING:
-    from typing import Literal, Mapping, Sequence, TypeAlias
+    from typing import Literal, Mapping, Self, Sequence, TypeAlias
 
     import numpy as np
     import tensorstore as ts
@@ -59,6 +59,29 @@ class TensorStoreHandler:
         in this object will override the default values provided by the handler.
         This is a complex object that can completely define the tensorstore, see
         <https://google.github.io/tensorstore/spec.html> for more information.
+
+    Examples
+    --------
+    ```python
+    from pymmcore_plus import CMMCorePlus
+    from pymmcore_plus.mda.handlers import TensorStoreHandler
+    from useq import MDASequence
+
+    core = CMMCorePlus.instance()
+    core.loadSystemConfiguration()
+
+    sequence = MDASequence(
+        channels=["DAPI", {"config": "FITC", "exposure": 1}],
+        stage_positions=[{"x": 1, "y": 1, "name": "some position"}, {"x": 0, "y": 0}],
+        time_plan={"interval": 2, "loops": 3},
+        z_plan={"range": 4, "step": 0.5},
+        axis_order="tpcz",
+    )
+
+    writer = TensorStoreHandler(path="example_ts.zarr", delete_existing=True)
+    core.mda.run(sequence, output=writer)
+    ```
+
     """
 
     def __init__(
@@ -116,7 +139,7 @@ class TensorStoreHandler:
         dir: str | PathLike[str] | None = None,
         cleanup_atexit: bool = True,
         **kwargs: Any,
-    ) -> TensorStoreHandler:
+    ) -> Self:
         """Create TensorStoreHandler that writes to a temporary directory.
 
         Parameters
@@ -141,9 +164,9 @@ class TensorStoreHandler:
         if cleanup_atexit:
 
             @atexit.register
-            def _atexit_rmtree(_path: str = path) -> None:
+            def _atexit_rmtree(_path: str = path) -> None:  # pragma: no cover
                 if os.path.isdir(_path):
-                    shutil.rmtree(_path)
+                    shutil.rmtree(_path, ignore_errors=True)
 
         return cls(path=path, **kwargs)
 
@@ -151,16 +174,17 @@ class TensorStoreHandler:
         """On sequence started, simply store the sequence."""
         self._frame_index = 0
         self._store = None
+        self._futures.clear()
         self.frame_metadatas.clear()
         self.current_sequence = seq
 
     def sequenceFinished(self, seq: useq.MDASequence) -> None:
         """On sequence finished, clear the current sequence."""
         if self._store is None:
-            return
+            return  # pragma: no cover
 
-        for f in self._futures:
-            f.result()
+        while self._futures:
+            self._futures.pop().result()
         if not self._nd_storage:
             self._store = self._store.resize(
                 exclusive_max=(self._frame_index, *self._store.shape[-2:])
@@ -261,7 +285,7 @@ class TensorStoreHandler:
     def finalize_metadata(self) -> None:
         """Finalize and flush metadata to storage."""
         if not (store := self._store) or not store.kvstore:
-            return
+            return  # pragma: no cover
 
         data = []
         for event, meta in self.frame_metadatas:
@@ -270,20 +294,16 @@ class TensorStoreHandler:
             meta["Event"] = json.loads(js)
             data.append(meta)
 
-        metadata = {
-            "useq_MDASequence": self.current_sequence.model_dump_json(
-                exclude_defaults=True
-            ),
-            "frame_metadatas": data,
-        }
+        metadata = {"frame_metadatas": data}
         if not self._nd_storage:
             metadata["frame_indices"] = [
-                (tuple(dict(k).items()), v) for k, v in self._frame_indices.items()
+                (tuple(dict(k).items()), v)  # type: ignore
+                for k, v in self._frame_indices.items()
             ]
 
         if self.ts_driver.startswith("zarr"):
             store.kvstore.write(".zattrs", json.dumps(metadata))
-        elif self.ts_driver == "n5":
+        elif self.ts_driver == "n5":  # pragma: no cover
             attrs = json.loads(store.kvstore.read("attributes.json").result().value)
             attrs.update(metadata)
             store.kvstore.write("attributes.json", json.dumps(attrs))
@@ -304,8 +324,7 @@ class TensorStoreHandler:
         The return value is safe to use as an index to self._store[...]
         """
         if self._nd_storage:
-            return self._ts.d[tuple(index.keys())][tuple(index.values())]
-            # return self._ts.d[*index][*index.values()]
+            return self._ts.d[index][tuple(index.values())]
 
         if any(isinstance(v, slice) for v in index.values()):
             idx: list | int | ts.DimExpression = self._get_frame_indices(index)
