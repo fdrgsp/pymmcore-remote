@@ -245,7 +245,7 @@ class MDARunner:
         """
         path = str(Path(path).expanduser().resolve())
 
-        if path.endswith(".zarr_tensorstore"):
+        if path.endswith(".tensorstore.zarr"):
             from pymmcore_plus.mda.handlers import TensorStoreHandler
 
             return TensorStoreHandler(path=path, delete_existing=True, driver="zarr")
